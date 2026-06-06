@@ -245,4 +245,7 @@ You already have loops in brainfuck using `[]`. To loop a fixed amount of times,
 >.>.>.>.>.
 ```
 
-# TODO
+## TODO
+
+This README is still a work in progress. To learn more about happyfuck, check out the source code
+of the interpreters and the tutorials in the `tutorials/` directory (also incomplete).
