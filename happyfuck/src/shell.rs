@@ -112,13 +112,13 @@ fn command_help() {
     );
     println!("MIT License");
     println!();
-    println!("$h, $help   - Displays this command.");
-    println!("$q, $quit   - Quits the shell.");
-    println!("$o, $code   - Displays all the code executed in this session.");
-    println!("$c, $cell   - Displays the current cell's value.");
-    println!("$m, $memory - Displays the current memory.");
-    println!("$r, $reset  - Resets the current session.");
-    println!("$t, $timing - Display the time each line takes to execute.");
+    println!("/h, /help   - Displays this command.");
+    println!("/q, /quit   - Quits the shell.");
+    println!("/o, /code   - Displays all the code executed in this session.");
+    println!("/c, /cell   - Displays the current cell's value.");
+    println!("/m, /memory - Displays the current memory.");
+    println!("/r, /reset  - Resets the current session.");
+    println!("/t, /timing - Display the time each line takes to execute.");
 }
 
 fn command_code(runtime: &Runtime) {
