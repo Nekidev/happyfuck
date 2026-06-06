@@ -7,7 +7,12 @@ Happyfuck is a superset of brainfuck. All brainfuck code is valid happyfuck code
 happyfuck code is valid brainfuck code. Happyfuck adds new commands and features to make
 programming easier and more enjoyable.
 
-This repository contains two interpreters, one for brainfuck and one for happyfuck
+This repository contains two interpreters, one for brainfuck and one for happyfuck. You can install
+the happyfuck interpreter directly using cargo:
+
+```
+cargo install happyfuck
+```
 
 ## Introduction to Brainfuck Concepts
 
