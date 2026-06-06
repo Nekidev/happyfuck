@@ -1,0 +1,15 @@
+[package]
+name = "brainfuck"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { version = "1.0.102", features = ["backtrace"] }
+clap = { version = "4.6.1", features = ["derive"] }
+rustyline = "18.0.0"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+[[bin]]
+name = "b"
+path = "src/main.rs"

@@ -1,0 +1,64 @@
+#
+# 01. BRAINFUCK BASICS AND THEIR SUPERSET
+# 
+# Brainfuck has 4 basic memory operations:
+
++  # Add 1 to the current cell
+-  # Subtract 1 from the current cell
+>  # Move the memory pointer one cell to the right
+<  # Move the memory pointer one cell to the left
+
+# For example, to store 1, 2, 3, 4, 5 in memory, you may do:
+
++>
+++>
++++>
+++++>
++++++>
+
+# And to clean it up:
+
+<-----
+<----
+<---
+<--
+<-
+
+# However, it comes with a lot of repetition. Happyfuck simplifies it by allowing you to pass a
+# number to the command.
+
++100
+
+# The example above adds 100 to the current cell. You don't have to write + 100 times, just repeat
+# one command any amount of times.
+#
+# It also works for the other three commands:
+
+-100
+>67
+<67
+
+# Additionally, happyfuck introduces one new command, the set command. It's represented with an
+# equal sign and a value.
+
+=10
+=67
+=0
+
+# The set command sets the current cell to a fixed value no matter what the current value of the
+# cell is.
+#
+# Remember operations on cells are wrapping. That means +256 won't produce any visible result, nor
+# -256 will. Set operations are also wrapping, =256 will set the cell to 0, =257 will set it to 1,
+# and so on.
+#
+# The same way you can set cells to fixed values, you can move to fixed cells with the go-to (~)
+# command.
+
+~10
+
+# That will make the memory pointer go to cell 10 no matter where it is.
+
+>1000000 ~2
+
+# The pointer ends at cell 2.

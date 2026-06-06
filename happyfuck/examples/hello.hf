@@ -1,0 +1,20 @@
+."What's your name? "
+
+# First byte is input length, the rest is the user's input.
+>+
+[          # Repeat while the user hasn't pressed enter
+    ,      # Take a new character of user input
+    @0+    # Increment the input length
+    >={<}  # Make a copy of the current value in the next cell and move to it
+    -10    # \n ASCII is 10, if cell - 10 == 0 then the loop exits, otherwise it'll be overriden with the next value
+]
+
+# Remove the trailing new line from the user's input.
+=0~0-
+
+."Hey there, "
+
+# Display user's input.
+(>.)
+
+."!\n"

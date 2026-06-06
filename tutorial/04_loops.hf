@@ -1,0 +1,54 @@
+#
+# 04. LOOPS
+#
+# Brainfuck has a single loop type, which reensemble while loops in other programming languages.
+# They're called while loops in happyfuck. They begin with [ and end with ], and run the code in
+# between for as long as at the start of each iteration the current cell is not 0. For example:
+
++3[>+5<-]
+
+# The code above sets the current cell to 5, then the loop begins:
+#
+# Iteration 1: Cell is 3, next cell is 0, iteration runs. The second cell gets added 5 and the
+#              first cell gets 1 subtracted.
+#
+# Iteration 2: Cell is 2, next cell is 5, iteration runs. The second cell gets added 5 and the
+#              first cell gets 1 subtracted.
+#
+# Iteration 3: Cell is 1, next cell is 10, iteration runs. The second cell gets added 5 and the
+#              first cell gets 1 subtracted.
+#
+# Iteration 4: Cell is 0, next cell is 15, iteration does not run.
+#
+# Happyfuck allows you to specify the size of the integer the loop checks for zero.
+
++w3     # Adds 3 as a word
+[       # Loops while current 2 bytes are not 0
+    >2  # Moves a word to the right
+    +5  # Adds 5
+    <2  # Moves a word to the left
+    -w  # Subtracts 1 as a word
+]w      # Closes the loop, specifying the loop checks are using words
+
+# Happyfuck brings in repeat loops. They begin with ( and end with ), and repeat the code a fixed
+# amount of times.
+
+="SEAL!"
+(.>)5
+
+# The example above writes 5 ASCII characters to memory, then outputs them all in order. Easy,
+# isn't it?
+#
+# You can also repeat a piece of code the amount of times stored in the current cell. For example:
+
+="A" > +10 (<.>)
+
+# The example above will output AAAAAAAAAA.
+#
+# Same as with while loops, you can interpret the current cell as a word, double word, or quad
+# word.
+
+="Hi!" >3 =w300 (<3 (.>)3)w
+
+# Nice uwu faces. The example above will output the string "Hi!" 300 times. 300 doesn't fit in one
+# byte, but since we're interpreting it as a word it works just fine.

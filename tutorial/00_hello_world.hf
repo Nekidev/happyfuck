@@ -1,0 +1,24 @@
+#
+# 00. HELLO WORLD
+#
+# Welcome to Happyfuck!
+#
+# The files in this folder work as a tutorial on how to use happyfuck and describe all operations
+# you can make with it. As you may already know, happyfuck is a superset of brainfuck. That means
+# all brainfuck code is valid happyfuck code.
+
+++++++++++[>+++++++>++++++++++>+++<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.
+
+# The code above outputs "Hello world!" using only brainfuck. That's hell of a code, though. No way
+# of understanding it without running it in your head. The happyfuck version is a bit simpler:
+
+."Hello world!\n"
+
+# You can pass a string to the output command and it outputs it. Way easier to understand, isn't
+# it?
+#
+# This tutorial assumes you already know how to write code in brainfuck and how brainfuck works. If
+# you don't, read https://brainfuck.org/brainfuck.html. It'll take you less than 3 minutes and
+# you'll be ready to come back to start writing happyfuck code.
+#
+# Happyfuck was made by Nyeki.

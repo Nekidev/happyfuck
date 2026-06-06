@@ -1,0 +1,31 @@
+#
+# 03. TEXT
+#
+# In Brainfuck, handling text is a mess. You have to manually store the ASCII codes of each
+# character and it's completely unreadable in the code.
+#
+# For example, to write the word SEAL into memory, the brainfuck code is
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++>
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++>
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++>
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+<<<
+
+# There's no way of telling what that says.
+#
+# Happyfuck makes managing strings easier. Instead of having to add or subtract until you have the
+# ASCII code, you can just set values to a string in code:
+
+="SEAL"
+
+# That operation will write down SEAL's ASCII code in the current and next 3 cells (4 in total, 4
+# characters). You can then output it easily:
+
+="SEAL".>.>.>.
+
+# That's it to print SEAL.
+#
+# Both " and ' work to set strings. The following is also valid Happyfuck code:
+
+='That\'s cool!'

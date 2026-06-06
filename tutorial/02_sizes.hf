@@ -1,0 +1,38 @@
+#
+# 02. SIZES
+#
+# Happyfuck allows for operating on multiple cells in a single operation. Instead of operating on a
+# single cell/byte, happyfuck allows you to specify the operation size to operate on one, two,
+# four, or eight bytes as big endians.
+#
+# In case you don't know what big endianness means, it's the order in which you usually write
+# numbers, big digits -> small digits.
+#
+# Sizes are specified with either b(yte), w(ord), d(ouble word), or q(uad word). Operations are
+# always on the current cell and all the required ones by the size to the right. For example:
+
++w
+
+# Memory now looks like this:
+#
+# 000 001
+# ^^^
+#
+# You can also specify a size to operations like +10. For example, to add 256, we can do
+
++w256
+
+# Memory will now look like this:
+#
+# 001 001
+# ^^^
+#
+# Subtracting and setting work the same way.
+
+-w257
+=d65535
+
+# Memory will now look like this:
+#
+# 255 255
+# ^^^
