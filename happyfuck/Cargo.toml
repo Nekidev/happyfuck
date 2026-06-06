@@ -6,6 +6,7 @@ readme = "README.md"
 license = "MIT"
 authors = ["Nyeki <me@nyeki.dev>"]
 description = "A superset of the Brainfuck programming language."
+repository = "https://github.com/Nekidev/happyfuck"
 
 [dependencies]
 anyhow = { version = "1.0.102", features = ["backtrace"] }
