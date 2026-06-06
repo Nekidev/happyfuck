@@ -2,7 +2,7 @@
 name = "happyfuck"
 version = "0.1.0"
 edition = "2024"
-readme = "README.md"
+readme = "../README.md"
 license = "MIT"
 authors = ["Nyeki <me@nyeki.dev>"]
 description = "A superset of the Brainfuck programming language."
