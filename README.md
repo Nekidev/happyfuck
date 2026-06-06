@@ -245,35 +245,4 @@ You already have loops in brainfuck using `[]`. To loop a fixed amount of times,
 >.>.>.>.>.
 ```
 
-### Dynamic Memory Operations
-
-Happyfuck extends brainfuck's capabilities by introducing dynamism based on the current memory
-state. This is already possible in brainfuck when using loops, but happyfuck provides more direct
-and flexible commands to achieve this.
-
-#### Sizes
-
-Happyfuck supports multi-cell memory operations and values. These can be any of the following:
-
-- `b` - Byte (1 cell)
-- `w` - Word (2 cells)
-- `d` - Double Word (4 cells)
-- `q` - Quad Word (8 cells)
-
-#### Expressions
-
-Expressions are code blocks that resolve to the value of the cell they end on. There's 4 types of
-expressions:
-
-> _Note: Parameters displayed with `?` are optional._
-
-| Type   | Syntax                                                             | Description                                                                           |
-| ------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Empty  | `?size`                                                            | An empty expression, commonly resolves to the value of the current cell.              |
-| Fixed  | `integer` `?size`                                                  | A fixed-value expression. Resolves to the specified integer.                          |
-| Code   | `{` code `}` `?size`                                               | A code expression. Resolves to the value of the cell the code block ends on.          |
-| String | `?size` (`"` or `'`) string (`"` or `'`). Quotes must be the same. | A string expression. Resolves to the index of the first cell of the string in memory. |
-
-To begin with, the **Empty** expression is the simplest one. It's just an optional size specifier.
-This is the default expression type (defaults to no size specified) and is commonly (not always)
-used to refer to the value of the current cell.
+# TODO
