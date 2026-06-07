@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
 use tracing::instrument;
@@ -10,6 +11,10 @@ use crate::language::tokenizing::Tokenizer;
 pub struct Runtime {
     pub memory: Vec<u8>,
     pub memory_pointer: usize,
+
+    pub functions: HashMap<String, Function>,
+
+    pub flag_carry: bool,
 
     pub code: String,
 
@@ -26,16 +31,32 @@ impl Runtime {
         }
     }
 
-    fn get_snapshot(&self) -> Snapshot {
-        Snapshot {
+    fn get_full_snapshot(&self) -> FullSnapshot {
+        FullSnapshot {
             memory: self.memory.clone(),
             memory_pointer: self.memory_pointer,
+            functions: self.functions.clone(),
+            flag_carry: self.flag_carry,
         }
     }
 
-    fn set_snapshot(&mut self, snapshot: Snapshot) {
+    fn set_full_snapshot(&mut self, snapshot: FullSnapshot) {
         self.memory = snapshot.memory;
         self.memory_pointer = snapshot.memory_pointer;
+        self.functions = snapshot.functions;
+        self.flag_carry = snapshot.flag_carry;
+    }
+
+    fn get_scope_snapshot(&self) -> ScopeSnapshot {
+        ScopeSnapshot {
+            functions: self.functions.clone(),
+            flag_carry: self.flag_carry,
+        }
+    }
+
+    fn set_scope_snapshot(&mut self, snapshot: ScopeSnapshot) {
+        self.functions = snapshot.functions;
+        self.flag_carry = snapshot.flag_carry;
     }
 
     #[instrument(skip(self), target = "hf::language::runtime::Runtime::read")]
@@ -143,7 +164,7 @@ impl Runtime {
         self.last_output = None;
         self.code.push_str(code);
 
-        self.run_statements(statements);
+        self.run_statements(statements, Size::None);
 
         tracing::trace!(code, "Finished running code.");
 
@@ -151,7 +172,7 @@ impl Runtime {
     }
 
     #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_statements")]
-    fn run_statements(&mut self, code: Vec<Statement>) {
+    fn run_statements(&mut self, code: Vec<Statement>, size: Size) -> Option<u64> {
         for statement in code {
             match statement {
                 Statement::Add {
@@ -175,30 +196,50 @@ impl Runtime {
                 Statement::Input { target } => self.run_input(target),
                 Statement::Output { size, value } => self.run_output(size, value),
                 Statement::Pointer { target, size } => self.run_pointer(target, size),
-                Statement::While(code, expr) => self.run_while(code, expr),
-                Statement::Repeat(code, expr) => self.run_repeat(code, expr),
+                Statement::While(code, expr) => {
+                    let result = self.run_while(code, expr);
+                    if result.is_some() {
+                        return result;
+                    }
+                }
+                Statement::Repeat(code, expr) => {
+                    let result = self.run_repeat(code, expr);
+                    if result.is_some() {
+                        return result;
+                    }
+                }
+                Statement::FunctionCall { target, name } => {
+                    self.run_function_call(target, name);
+                }
+                Statement::FunctionDefinition { name, code, size } => {
+                    self.run_function_def(name, code, size)
+                }
+                Statement::Return { value } => return Some(self.run_return(value, size)),
+                Statement::FlagCarry { target } => self.run_flag_carry(target),
             }
         }
+
+        None
     }
 
     #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_expression")]
     fn run_expression(&mut self, code: Vec<Statement>, size: Size) -> u64 {
         tracing::trace!(?size, "Computing code expression...");
 
-        let snapshot = self.get_snapshot();
+        let snapshot = self.get_full_snapshot();
 
-        self.run_statements(code);
+        self.run_statements(code, Size::None);
 
         let value = self.read(self.memory_pointer, size);
 
         tracing::trace!(value, ?size, "Computed code expression.");
 
-        self.set_snapshot(snapshot);
+        self.set_full_snapshot(snapshot);
 
         value
     }
 
-    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_expression")]
+    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_target")]
     fn run_target(&mut self, expr: Option<Expression>) -> usize {
         match expr {
             None => self.memory_pointer,
@@ -208,6 +249,7 @@ impl Runtime {
                 self.read(self.memory_pointer, size.or(Size::Byte)) as usize
             }
             Some(Expression::None) => self.read(self.memory_pointer, Size::Byte) as usize,
+            Some(Expression::Function(name)) => self.run_function_call(None, name) as usize,
             Some(Expression::String(_)) => unreachable!(),
         }
     }
@@ -233,6 +275,11 @@ impl Runtime {
                 amount = self.run_expression(code, rsize);
 
                 tracing::trace!(amount, ?size, "Adding computed value...");
+            }
+            Expression::Function(name) => {
+                amount = self.run_function_call(None, name);
+
+                tracing::trace!(amount, ?size, "Adding returned value...");
             }
             Expression::String(_) => unreachable!(),
             Expression::Size(_) => unreachable!(),
@@ -274,6 +321,17 @@ impl Runtime {
                 amount = self.run_expression(code, rsize);
 
                 tracing::trace!(amount, ?size, "Subtracting computed value...");
+            }
+            Expression::Function(name) => {
+                let result = self.run_function_call(None, name);
+
+                if size.is_some() {
+                    amount = size.wrap(result);
+                } else {
+                    amount = result;
+                }
+
+                tracing::trace!(amount, ?size, "Subtracting returned value...");
             }
             Expression::String(_) => unreachable!(),
             Expression::Size(_) => unreachable!(),
@@ -323,6 +381,17 @@ impl Runtime {
                 tracing::trace!(content, ?size, "Setting string...");
                 return;
             }
+            Expression::Function(name) => {
+                let result = self.run_function_call(None, name);
+
+                if size.is_some() {
+                    amount = size.wrap(result);
+                } else {
+                    amount = result;
+                }
+
+                tracing::trace!(amount, ?size, "Setting returned value...");
+            }
             Expression::None => unreachable!(),
             Expression::Size(_) => unreachable!(),
         };
@@ -354,6 +423,11 @@ impl Runtime {
 
                 tracing::trace!(amount, ?size, "Moving left by computed value...");
             }
+            Expression::Function(name) => {
+                amount = self.run_function_call(None, name);
+
+                tracing::trace!(amount, "Moving left by returned value...");
+            }
             Expression::String(_) => unreachable!(),
             Expression::Size(_) => unreachable!(),
         };
@@ -380,6 +454,11 @@ impl Runtime {
                 amount = self.run_expression(code, size);
 
                 tracing::trace!(amount, ?size, "Moving right by computed value...");
+            }
+            Expression::Function(name) => {
+                amount = self.run_function_call(None, name);
+
+                tracing::trace!(amount, "Moving right by returned value...");
             }
             Expression::String(_) => unreachable!(),
             Expression::Size(_) => unreachable!(),
@@ -413,6 +492,11 @@ impl Runtime {
 
                 tracing::trace!(amount, "Going to cell at computed pointer...");
             }
+            Expression::Function(name) => {
+                amount = self.run_function_call(None, name);
+
+                tracing::trace!(amount, "Going to cell at returned value...");
+            }
             Expression::String(_) => unreachable!(),
         };
 
@@ -441,14 +525,16 @@ impl Runtime {
     fn run_output(&mut self, size: Size, value: Expression) {
         match value {
             Expression::None => {
-                let byte = self.read(self.memory_pointer, size.or(Size::Byte));
+                let value = self.read(self.memory_pointer, size.or(Size::Byte));
 
-                io::stdout().write_all(&[byte as u8]).unwrap();
-                self.last_output = Some(byte as u8 as char);
+                io::stdout()
+                    .write_all(&size.or(Size::Byte).to_be_bytes(value))
+                    .unwrap();
+                self.last_output = Some(value as u8 as char);
 
                 tracing::trace!(
-                    output = byte,
-                    "Executed . command. Writing current byte to output."
+                    output = value,
+                    "Executed . command. Writing current value to output."
                 );
             }
             Expression::Code(code, rsize) => {
@@ -460,16 +546,18 @@ impl Runtime {
 
                 tracing::trace!(
                     output = result,
-                    "Executed . command. Writing computed byte to output."
+                    "Executed . command. Writing computed value to output."
                 );
             }
-            Expression::Fixed(byte) => {
-                io::stdout().write_all(&[byte as u8]).unwrap();
-                self.last_output = Some(byte as u8 as char);
+            Expression::Fixed(value) => {
+                io::stdout()
+                    .write_all(&size.or(Size::Byte).to_be_bytes(value))
+                    .unwrap();
+                self.last_output = Some(value as u8 as char);
 
                 tracing::trace!(
-                    output = byte,
-                    "Executed . command. Writing fixed byte to output."
+                    output = value,
+                    "Executed . command. Writing fixed value to output."
                 );
             }
             Expression::String(contents) => {
@@ -481,6 +569,18 @@ impl Runtime {
                 tracing::trace!(
                     output = contents,
                     "Executed . command. Writing fixed string to output."
+                );
+            }
+            Expression::Function(name) => {
+                let result = self.run_function_call(None, name);
+                io::stdout()
+                    .write_all(&Size::Byte.to_be_bytes(result))
+                    .unwrap();
+                self.last_output = Some(result as u8 as char);
+
+                tracing::trace!(
+                    output = result,
+                    "Executed . command. Writing returned value to output."
                 );
             }
             Expression::Size(_) => unreachable!(),
@@ -499,12 +599,13 @@ impl Runtime {
     }
 
     #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_while")]
-    fn run_while(&mut self, code: Vec<Statement>, expr: Expression) {
+    fn run_while(&mut self, code: Vec<Statement>, expr: Expression) -> Option<u64> {
         loop {
             let cell = match &expr {
                 Expression::None => self.read(self.memory_pointer, Size::Byte),
                 Expression::Code(code, size) => self.run_expression(code.clone(), *size),
                 Expression::Size(size) => self.read(self.memory_pointer, size.or(Size::Byte)),
+                Expression::Function(name) => self.run_function_call(None, name.clone()),
                 Expression::Fixed(_) => unreachable!(),
                 Expression::String(_) => unreachable!(),
             };
@@ -513,27 +614,107 @@ impl Runtime {
                 break;
             }
 
-            self.run_statements(code.clone());
+            let snapshot = self.get_scope_snapshot();
+            let result = self.run_statements(code.clone(), Size::None);
+            self.set_scope_snapshot(snapshot);
+
+            if result.is_some() {
+                return result;
+            }
         }
+
+        None
     }
 
     #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_repeat")]
-    fn run_repeat(&mut self, code: Vec<Statement>, expr: Expression) {
+    fn run_repeat(&mut self, code: Vec<Statement>, expr: Expression) -> Option<u64> {
         let iterations = match expr {
             Expression::Fixed(amount) => amount,
             Expression::Code(code, size) => self.run_expression(code, size),
             Expression::Size(size) => self.read(self.memory_pointer, size.or(Size::Byte)),
             Expression::None => self.read(self.memory_pointer, Size::Byte),
+            Expression::Function(name) => self.run_function_call(None, name),
             Expression::String(_) => unreachable!(),
         };
 
         for _ in 0..iterations {
-            self.run_statements(code.clone());
+            let snapshot = self.get_scope_snapshot();
+            let result = self.run_statements(code.clone(), Size::None);
+            self.set_scope_snapshot(snapshot);
+
+            if result.is_some() {
+                return result;
+            }
         }
+
+        None
+    }
+
+    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_function_def")]
+    fn run_function_def(&mut self, name: String, code: Vec<Statement>, size: Size) {
+        self.functions.insert(name, Function { code, size });
+    }
+
+    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_function_call")]
+    fn run_function_call(&mut self, target: Option<Expression>, name: String) -> u64 {
+        let target = self.run_target(target);
+        let function = self.functions.get(&name).unwrap();
+        let function_size = function.size;
+
+        let init_cursor = self.memory_pointer;
+        self.memory_pointer = target;
+
+        let snapshot = self.get_scope_snapshot();
+
+        let result = self.run_statements(function.code.clone(), function_size);
+        let result = if let Some(result) = result {
+            result
+        } else {
+            self.read(self.memory_pointer, function_size.or(Size::Byte))
+        };
+
+        self.set_scope_snapshot(snapshot);
+        self.memory_pointer = init_cursor;
+
+        result
+    }
+
+    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_return")]
+    fn run_return(&mut self, expr: Expression, size: Size) -> u64 {
+        match expr {
+            Expression::Code(code, size) => {
+                size.or(Size::Byte).wrap(self.run_expression(code, size))
+            }
+            Expression::Fixed(amount) => size.or(Size::Byte).wrap(amount),
+            Expression::None => self.read(self.memory_pointer, size.or(Size::Byte)),
+            Expression::Function(name) => self.run_function_call(None, name),
+            Expression::String(_) => unreachable!(),
+            Expression::Size(_) => unreachable!(),
+        }
+    }
+
+    #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_flag_carry")]
+    fn run_flag_carry(&mut self, target: Option<Expression>) {
+        let target = self.run_target(target);
+
+        self.write(target, if self.flag_carry { 1 } else { 0 }, Size::Byte);
     }
 }
 
-struct Snapshot {
+struct FullSnapshot {
     pub memory: Vec<u8>,
     pub memory_pointer: usize,
+    pub functions: HashMap<String, Function>,
+    pub flag_carry: bool,
+}
+
+struct ScopeSnapshot {
+    pub functions: HashMap<String, Function>,
+    pub flag_carry: bool,
+}
+
+#[derive(Clone)]
+pub struct Function {
+    code: Vec<Statement>,
+    size: Size,
 }

@@ -68,6 +68,27 @@ pub enum Token {
 
     /// @
     Target,
+
+    /// &
+    FunctionDefinition(String),
+
+    /// :
+    FunctionBodyStart,
+
+    /// ;
+    FunctionBodyFinish,
+
+    /// %
+    FunctionCallStatement(String),
+
+    /// ?
+    FunctionCallExpression(String),
+
+    /// C
+    FlagCarry,
+
+    /// R
+    Return,
 }
 
 impl Token {
@@ -116,6 +137,13 @@ impl Tokenizer {
                 '(' => self.tokenize_parenthesis_left(),
                 ')' => self.tokenize_parenthesis_right(),
                 '#' => self.tokenize_comment(),
+                '&' => self.tokenize_function_def()?,
+                ':' => self.tokenize_function_body_start(),
+                ';' => self.tokenize_function_body_finish(),
+                '%' => self.tokenize_function_call_statement()?,
+                '?' => self.tokenize_function_call_expression()?,
+                'C' => self.tokenize_flag_carry(),
+                'R' => self.tokenize_return(),
                 '\'' | '"' => self.tokenize_string()?,
                 '0'..='9' => self.tokenize_number(),
                 'b' | 'w' | 'd' | 'q' => self.tokenize_size(),
@@ -438,5 +466,128 @@ impl Tokenizer {
         tracing::trace!(?ch, "Tokenized size");
 
         Token::Size(ch)
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_function_def"
+    )]
+    fn tokenize_function_def(&mut self) -> Result<Token, SyntaxError> {
+        self.next();
+
+        let mut name = String::new();
+
+        while let Some(ch) = self.read() {
+            match ch {
+                'a'..='z' | '_' => name.push(ch),
+                _ => break,
+            }
+
+            self.next();
+        }
+
+        if name.is_empty() {
+            Err(SyntaxError::new(
+                "Function definitions require a name.",
+                self.cursor..self.cursor + 1,
+                true,
+            ))
+        } else {
+            Ok(Token::FunctionDefinition(name))
+        }
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_function_body_start"
+    )]
+    fn tokenize_function_body_start(&mut self) -> Token {
+        self.next();
+        Token::FunctionBodyStart
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_function_body_finish"
+    )]
+    fn tokenize_function_body_finish(&mut self) -> Token {
+        self.next();
+        Token::FunctionBodyFinish
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_function_call_statement"
+    )]
+    fn tokenize_function_call_statement(&mut self) -> Result<Token, SyntaxError> {
+        self.next();
+
+        let mut name = String::new();
+
+        while let Some(ch) = self.read() {
+            match ch {
+                'a'..='z' | '_' => name.push(ch),
+                _ => break,
+            }
+
+            self.next();
+        }
+
+        if name.is_empty() {
+            Err(SyntaxError::new(
+                "Function calls require a function name.",
+                self.cursor..self.cursor + 1,
+                true,
+            ))
+        } else {
+            Ok(Token::FunctionCallStatement(name))
+        }
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_function_call_expression"
+    )]
+    fn tokenize_function_call_expression(&mut self) -> Result<Token, SyntaxError> {
+        self.next();
+
+        let mut name = String::new();
+
+        while let Some(ch) = self.read() {
+            match ch {
+                'a'..='z' | '_' => name.push(ch),
+                _ => break,
+            }
+
+            self.next();
+        }
+
+        if name.is_empty() {
+            Err(SyntaxError::new(
+                "Function calls require a function name.",
+                self.cursor..self.cursor + 1,
+                true,
+            ))
+        } else {
+            Ok(Token::FunctionCallExpression(name))
+        }
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_flag_carry"
+    )]
+    fn tokenize_flag_carry(&mut self) -> Token {
+        self.next();
+        Token::FlagCarry
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_return"
+    )]
+    fn tokenize_return(&mut self) -> Token {
+        self.next();
+        Token::Return
     }
 }

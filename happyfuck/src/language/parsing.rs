@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tracing::instrument;
 
 use crate::language::errors::SyntaxError;
@@ -24,6 +26,9 @@ pub enum Statement {
         target: Option<Expression>,
         size: Size,
     },
+    FlagCarry {
+        target: Option<Expression>,
+    },
     Left(Expression),
     Right(Expression),
     Goto(Expression),
@@ -36,6 +41,18 @@ pub enum Statement {
     },
     While(Vec<Statement>, Expression),
     Repeat(Vec<Statement>, Expression),
+    FunctionDefinition {
+        name: String,
+        code: Vec<Statement>,
+        size: Size,
+    },
+    FunctionCall {
+        target: Option<Expression>,
+        name: String,
+    },
+    Return {
+        value: Expression,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +62,7 @@ pub enum Expression {
     Code(Vec<Statement>, Size),
     Fixed(u64),
     String(String),
+    Function(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +72,7 @@ pub enum ExpressionKind {
     Code,
     Fixed,
     String,
+    Function,
 }
 
 #[repr(u8)]
@@ -98,6 +117,16 @@ impl Size {
             Size::QWord => value.to_be_bytes().to_vec(),
         }
     }
+
+    pub fn fits(&self, value: u64) -> bool {
+        match self {
+            Size::None => panic!(),
+            Size::Byte => value <= u8::MAX as u64 + 1,
+            Size::Word => value <= u16::MAX as u64 + 1,
+            Size::DWord => value <= u32::MAX as u64 + 1,
+            Size::QWord => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +134,7 @@ pub enum Nesting {
     Braces,
     Brackets,
     Parentheses,
+    FunctionBody,
 }
 
 #[derive(Default)]
@@ -113,6 +143,7 @@ pub struct Parser {
     tokens: Vec<Token>,
 
     pub nesting: Vec<Nesting>,
+    pub functions: HashSet<String>,
 }
 
 impl Parser {
@@ -161,13 +192,33 @@ impl Parser {
                 Token::Plus => self.parse_plus(None)?,
                 Token::Minus => self.parse_minus(None)?,
                 Token::Set => self.parse_set(None)?,
+                Token::FlagCarry => self.parse_flag_carry(None),
                 Token::Left => self.parse_left()?,
                 Token::Right => self.parse_right()?,
                 Token::Goto => self.parse_goto()?,
                 Token::Input => self.parse_input(None),
                 Token::Output => self.parse_output()?,
                 Token::Target => self.parse_target()?,
-                Token::Pointer => self.parse_pointer(None)?,
+                Token::Pointer => self.parse_pointer(None),
+                Token::FunctionDefinition(name) => self.parse_function_def(name)?,
+                Token::FunctionBodyStart => {
+                    return self.error(
+                        "Found a function body start outside of a function declaration.",
+                        true,
+                    );
+                }
+                Token::FunctionBodyFinish => {
+                    if self.nesting.ends_with(&[Nesting::FunctionBody]) {
+                        self.nesting.pop();
+                        self.next();
+                        break;
+                    } else {
+                        return self.error(
+                            "Found a function body finish (;) outside a function declaration.",
+                            true,
+                        );
+                    }
+                }
                 Token::BraceLeft => {
                     return self.error(
                         "Found an opening brace ({) for an expression without a statement to modify.",
@@ -212,11 +263,7 @@ impl Parser {
                         );
                     }
                 }
-                Token::Comment(_) => {
-                    self.next();
-                    continue;
-                }
-                Token::Nothing(_) => {
+                Token::Comment(_) | Token::Nothing(_) => {
                     self.next();
                     continue;
                 }
@@ -235,6 +282,14 @@ impl Parser {
                 Token::Size(_) => {
                     return self.error("Sizes can only appear when an operator supports it.", true);
                 }
+                Token::FunctionCallStatement(name) => self.parse_function_call(None, name)?,
+                Token::FunctionCallExpression(_) => {
+                    return self.error(
+                        "Using functions as statements require the % command, not the ? command.",
+                        true,
+                    );
+                }
+                Token::Return => self.parse_return()?,
             };
 
             statements.push(statement);
@@ -317,6 +372,12 @@ impl Parser {
 
                 Ok(Expression::Size(size))
             }
+            Token::FunctionCallExpression(name) => {
+                self.next();
+                tracing::trace!(name, "Parsed function call expression.");
+
+                Ok(Expression::Function(name))
+            }
             _ if kinds.contains(&ExpressionKind::None) => Ok(Expression::None),
             _ => result_missing,
         }
@@ -331,6 +392,7 @@ impl Parser {
             ExpressionKind::None,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         tracing::trace!(?value, "Parsed + token.");
@@ -351,6 +413,7 @@ impl Parser {
             ExpressionKind::None,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Subtract {
@@ -369,6 +432,7 @@ impl Parser {
             ExpressionKind::Code,
             ExpressionKind::Fixed,
             ExpressionKind::String,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Set {
@@ -386,6 +450,7 @@ impl Parser {
             ExpressionKind::None,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Left(expression))
@@ -399,6 +464,7 @@ impl Parser {
             ExpressionKind::None,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Right(expression))
@@ -413,6 +479,7 @@ impl Parser {
             ExpressionKind::Size,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Goto(expression))
@@ -434,18 +501,25 @@ impl Parser {
             ExpressionKind::Code,
             ExpressionKind::Fixed,
             ExpressionKind::String,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::Output { size, value })
     }
 
     #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_pointer")]
-    fn parse_pointer(&mut self, target: Option<Expression>) -> Result<Statement, SyntaxError> {
+    fn parse_pointer(&mut self, target: Option<Expression>) -> Statement {
         self.next();
 
         let size = self.parse_size();
 
-        Ok(Statement::Pointer { target, size })
+        Statement::Pointer { target, size }
+    }
+
+    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_flag_carry")]
+    fn parse_flag_carry(&mut self, target: Option<Expression>) -> Statement {
+        self.next();
+        Statement::FlagCarry { target }
     }
 
     #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_target")]
@@ -455,8 +529,9 @@ impl Parser {
         let target = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Size,
-            ExpressionKind::Fixed,
             ExpressionKind::Code,
+            ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         let Some(token) = self.read() else {
@@ -470,8 +545,10 @@ impl Parser {
             Token::Plus => self.parse_plus(Some(target)),
             Token::Minus => self.parse_minus(Some(target)),
             Token::Set => self.parse_set(Some(target)),
-            Token::Pointer => self.parse_pointer(Some(target)),
+            Token::Pointer => Ok(self.parse_pointer(Some(target))),
             Token::Input => Ok(self.parse_input(Some(target))),
+            Token::FlagCarry => Ok(self.parse_flag_carry(Some(target))),
+            Token::FunctionCallExpression(name) => self.parse_function_call(Some(target), name),
             _ => self.error(
                 "Target operand (@) didn't have a corresponding write command.",
                 true,
@@ -489,6 +566,7 @@ impl Parser {
             ExpressionKind::None,
             ExpressionKind::Size,
             ExpressionKind::Code,
+            ExpressionKind::Function,
         ])?;
 
         Ok(Statement::While(code, expr))
@@ -505,10 +583,86 @@ impl Parser {
             ExpressionKind::Size,
             ExpressionKind::Code,
             ExpressionKind::Fixed,
+            ExpressionKind::Function,
         ])?;
 
         tracing::trace!(?code, ?expr, "Parsed parentheses.");
 
         Ok(Statement::Repeat(code, expr))
+    }
+
+    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_function_def")]
+    fn parse_function_def(&mut self, name: String) -> Result<Statement, SyntaxError> {
+        if self.functions.contains(&name) {
+            return self.error(
+                format!(
+                    concat!(
+                        "Function `{}` already exists. You cannot define a function with the ",
+                        "same name twice."
+                    ),
+                    name
+                ),
+                true,
+            );
+        }
+
+        self.next();
+        self.nesting.push(Nesting::FunctionBody);
+
+        if self.read() != Some(Token::FunctionBodyStart) {
+            return self.error(
+                "Function declarations require a function body start. None was found.",
+                true,
+            );
+        }
+
+        self.next();
+
+        self.functions.insert(name.clone());
+        let snapshot = self.functions.clone();
+
+        let code = self.parse()?;
+        let size = self.parse_size();
+
+        self.functions = snapshot;
+
+        Ok(Statement::FunctionDefinition { name, code, size })
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::parsing::Parser::parse_function_call"
+    )]
+    fn parse_function_call(
+        &mut self,
+        target: Option<Expression>,
+        name: String,
+    ) -> Result<Statement, SyntaxError> {
+        if !self.functions.contains(&name) {
+            return self.error(
+                format!("There's no function `{name}` in the current scope."),
+                true,
+            );
+        }
+
+        self.next();
+        Ok(Statement::FunctionCall { target, name })
+    }
+
+    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_return")]
+    fn parse_return(&mut self) -> Result<Statement, SyntaxError> {
+        if !self.nesting.contains(&Nesting::FunctionBody) {
+            return self.error("You cannot return outside of a function body.", true);
+        }
+
+        self.next();
+
+        let value = self.parse_expression([
+            ExpressionKind::Code,
+            ExpressionKind::Fixed,
+            ExpressionKind::Function,
+        ])?;
+
+        Ok(Statement::Return { value })
     }
 }

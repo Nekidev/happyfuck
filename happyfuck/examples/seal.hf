@@ -7,3 +7,11 @@
     (.>)  # Display all characters of SEAL (length stored in the first cell)
     ~0    # Move the cursor back to the beginning of the word
 )5        # Repeat 5 times
+
+&print:
+    @{~0+d4}d$d
+    @0+d4
+    (>.)
+    @0-d4
+    ~{~0+d4}d
+;
