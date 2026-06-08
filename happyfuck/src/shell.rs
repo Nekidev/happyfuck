@@ -91,14 +91,14 @@ pub fn start(runtime: &mut Runtime) {
                             println!();
                         }
 
-                        if let Err(error) = result
+                        if let Err(error) = &result
                             && error.is_fatal
                         {
                             eprintln!("{error}");
                             write_to_history = false;
                         }
 
-                        if shell.timing {
+                        if result.is_ok() && shell.timing {
                             println!("Took {elapsed:?}");
                         }
                     }
@@ -169,10 +169,10 @@ fn command_memory(runtime: &Runtime) {
             if (i) % 10 == 0 && i != 0 {
                 println!();
             }
-    
+
             print!("{cell:0>3} ");
         }
-    
+
         println!();
     }
 }
