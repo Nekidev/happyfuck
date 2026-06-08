@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 use tracing::instrument;
 
 use crate::language::errors::SyntaxError;
-use crate::language::parsing::{Expression, Parser, Size, Statement};
+use crate::language::parsing::{Expression, IfBranch, Parser, Size, Statement};
 use crate::language::tokenizing::Tokenizer;
 
 #[derive(Default)]
@@ -198,8 +198,12 @@ impl Runtime {
                 Statement::Output { size, value } => self.run_output(size, value),
                 Statement::DebugOutput { size, value } => self.run_debug_output(size, value),
                 Statement::Pointer { target, size } => self.run_pointer(target, size),
-                Statement::While(code, expr) => {
-                    let result = self.run_while(code, expr);
+                Statement::While {
+                    code,
+                    expr,
+                    is_negated,
+                } => {
+                    let result = self.run_while(code, expr, is_negated);
                     if result.is_some() {
                         return result;
                     }
@@ -218,6 +222,7 @@ impl Runtime {
                 }
                 Statement::Return { value } => return Some(self.run_return(value, size)),
                 Statement::FlagCarry { target } => self.run_flag_carry(target),
+                Statement::If(branches) => self.run_if(branches),
             }
         }
 
@@ -699,7 +704,12 @@ impl Runtime {
     }
 
     #[instrument(skip_all, target = "hf::language::runtime::Runtime::run_while")]
-    fn run_while(&mut self, code: Vec<Statement>, expr: Expression) -> Option<u64> {
+    fn run_while(
+        &mut self,
+        code: Vec<Statement>,
+        expr: Expression,
+        is_negated: bool,
+    ) -> Option<u64> {
         loop {
             let cell = match &expr {
                 Expression::None => self.read(self.memory_pointer, Size::Byte),
@@ -710,7 +720,7 @@ impl Runtime {
                 Expression::String(_) => unreachable!(),
             };
 
-            if cell == 0 {
+            if (!is_negated && cell == 0) || (is_negated && cell != 0) {
                 break;
             }
 
@@ -803,6 +813,45 @@ impl Runtime {
         let target = self.run_target(target);
 
         self.write(target, if self.flag_carry { 1 } else { 0 }, Size::Byte);
+    }
+
+    #[instrument(skip_all)]
+    fn run_if(&mut self, branches: Vec<IfBranch>) {
+        for branch in branches {
+            match branch {
+                IfBranch::If {
+                    expr,
+                    is_negated,
+                    code,
+                } => {
+                    let cell = match &expr {
+                        Expression::None => self.read(self.memory_pointer, Size::Byte),
+                        Expression::Code(code, size) => self.run_expression(code.clone(), *size),
+                        Expression::Size(size) => {
+                            self.read(self.memory_pointer, size.or(Size::Byte))
+                        }
+                        Expression::Function(name) => self.run_function_call(None, name.clone()),
+                        Expression::Fixed(_) => unreachable!(),
+                        Expression::String(_) => unreachable!(),
+                    };
+
+                    if (!is_negated && cell == 0) || (is_negated && cell != 0) {
+                        continue;
+                    }
+
+                    let snapshot = self.get_scope_snapshot();
+                    self.run_statements(code, Size::None);
+                    self.set_scope_snapshot(snapshot);
+                    break;
+                }
+                IfBranch::Else { code } => {
+                    let snapshot = self.get_scope_snapshot();
+                    self.run_statements(code, Size::None);
+                    self.set_scope_snapshot(snapshot);
+                    break;
+                }
+            }
+        }
     }
 }
 

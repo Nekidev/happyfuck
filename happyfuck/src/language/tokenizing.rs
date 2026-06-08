@@ -92,6 +92,21 @@ pub enum Token {
 
     /// *
     DebugOutput,
+
+    /// !
+    Negation,
+
+    /// I
+    If,
+
+    /// L
+    ElseIf,
+
+    /// E
+    Else,
+
+    /// F
+    IfEnd,
 }
 
 impl Token {
@@ -115,7 +130,7 @@ impl Tokenizer {
         self.cursor += 1;
     }
 
-    #[instrument(skip_all, target = "hf::language::tokenizing::Tokenizer::tokenize")]
+    #[instrument(skip_all)]
     pub fn tokenize(&mut self, code: &str) -> Result<Vec<Token>, SyntaxError> {
         let mut tokens = vec![];
 
@@ -148,6 +163,11 @@ impl Tokenizer {
                 'C' => self.tokenize_flag_carry(),
                 'R' => self.tokenize_return(),
                 '*' => self.tokenize_debug_output(),
+                '!' => self.tokenize_negation(),
+                'I' => self.tokenize_if(),
+                'L' => self.tokenize_else_if(),
+                'E' => self.tokenize_else(),
+                'F' => self.tokenize_if_end(),
                 '\'' | '"' => self.tokenize_string()?,
                 '0'..='9' => self.tokenize_number(),
                 'b' | 'w' | 'd' | 'q' => self.tokenize_size(),
@@ -171,167 +191,119 @@ impl Tokenizer {
         Ok(tokens)
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_plus"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_plus(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized +");
         Token::Plus
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_minus"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_minus(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized -");
         Token::Minus
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_left"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_left(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized <");
         Token::Left
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_right"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_right(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized >");
         Token::Right
     }
 
-    #[instrument(skip_all, target = "hf::language::tokenizing::Tokenizer::tokenize_set")]
+    #[instrument(skip_all)]
     fn tokenize_set(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized =");
         Token::Set
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_goto"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_goto(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized ~");
         Token::Goto
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_input"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_input(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized ,");
         Token::Input
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_output"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_output(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized .");
         Token::Output
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_target"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_target(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized @");
         Token::Target
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_pointer"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_pointer(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized $");
         Token::Pointer
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_brace_left"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_brace_left(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized {{");
         Token::BraceLeft
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_brace_right"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_brace_right(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized }}");
         Token::BraceRight
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_bracket_left"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_bracket_left(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized [");
         Token::BracketLeft
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_bracket_right"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_bracket_right(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized ]");
         Token::BracketRight
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_parenthesis_left"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_parenthesis_left(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized (");
         Token::ParenthesisLeft
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_parenthesis_right"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_parenthesis_right(&mut self) -> Token {
         self.next();
         tracing::trace!("Tokenized )");
         Token::ParenthesisRight
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_string"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_string(&mut self) -> Result<Token, SyntaxError> {
         let init_cursor = self.cursor;
 
@@ -392,10 +364,7 @@ impl Tokenizer {
         ))
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_comment"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_comment(&mut self) -> Token {
         self.next();
 
@@ -415,10 +384,7 @@ impl Tokenizer {
         Token::Comment(contents)
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_number"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_number(&mut self) -> Token {
         let mut contents = String::new();
 
@@ -438,10 +404,7 @@ impl Tokenizer {
         Token::Number(contents)
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_nothing"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_nothing(&mut self) -> Token {
         self.next();
         let mut contents = String::new();
@@ -459,10 +422,7 @@ impl Tokenizer {
         Token::Nothing(contents)
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_size"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_size(&mut self) -> Token {
         let ch = self.read().unwrap();
         self.next();
@@ -472,10 +432,7 @@ impl Tokenizer {
         Token::Size(ch)
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_function_def"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_function_def(&mut self) -> Result<Token, SyntaxError> {
         self.next();
 
@@ -501,28 +458,19 @@ impl Tokenizer {
         }
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_function_body_start"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_function_body_start(&mut self) -> Token {
         self.next();
         Token::FunctionBodyStart
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_function_body_finish"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_function_body_finish(&mut self) -> Token {
         self.next();
         Token::FunctionBodyFinish
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_function_call_statement"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_function_call_statement(&mut self) -> Result<Token, SyntaxError> {
         self.next();
 
@@ -548,10 +496,7 @@ impl Tokenizer {
         }
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_function_call_expression"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_function_call_expression(&mut self) -> Result<Token, SyntaxError> {
         self.next();
 
@@ -577,30 +522,51 @@ impl Tokenizer {
         }
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_flag_carry"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_flag_carry(&mut self) -> Token {
         self.next();
         Token::FlagCarry
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_return"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_return(&mut self) -> Token {
         self.next();
         Token::Return
     }
 
-    #[instrument(
-        skip_all,
-        target = "hf::language::tokenizing::Tokenizer::tokenize_debug_output"
-    )]
+    #[instrument(skip_all)]
     fn tokenize_debug_output(&mut self) -> Token {
         self.next();
         Token::DebugOutput
+    }
+
+    #[instrument(skip_all)]
+    fn tokenize_negation(&mut self) -> Token {
+        self.next();
+        Token::Negation
+    }
+
+    #[instrument(skip_all)]
+    fn tokenize_if(&mut self) -> Token {
+        self.next();
+        Token::If
+    }
+
+    #[instrument(skip_all)]
+    fn tokenize_else_if(&mut self) -> Token {
+        self.next();
+        Token::ElseIf
+    }
+
+    #[instrument(skip_all)]
+    fn tokenize_else(&mut self) -> Token {
+        self.next();
+        Token::Else
+    }
+
+    #[instrument(skip_all)]
+    fn tokenize_if_end(&mut self) -> Token {
+        self.next();
+        Token::IfEnd
     }
 }

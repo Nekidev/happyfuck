@@ -43,7 +43,11 @@ pub enum Statement {
         size: Size,
         value: Expression,
     },
-    While(Vec<Statement>, Expression),
+    While {
+        code: Vec<Statement>,
+        expr: Expression,
+        is_negated: bool,
+    },
     Repeat(Vec<Statement>, Expression),
     FunctionDefinition {
         name: String,
@@ -56,6 +60,19 @@ pub enum Statement {
     },
     Return {
         value: Expression,
+    },
+    If(Vec<IfBranch>),
+}
+
+#[derive(Debug, Clone)]
+pub enum IfBranch {
+    If {
+        expr: Expression,
+        is_negated: bool,
+        code: Vec<Statement>,
+    },
+    Else {
+        code: Vec<Statement>,
     },
 }
 
@@ -159,6 +176,9 @@ pub enum Nesting {
     Brackets,
     Parentheses,
     FunctionBody,
+    If,
+    ElseIf,
+    Else,
 }
 
 #[derive(Default)]
@@ -357,6 +377,40 @@ impl Parser {
                     );
                 }
                 Token::Return => self.parse_return()?,
+                Token::Negation => {
+                    return self.error("You cannot negate a statement, only expressions.", true);
+                }
+                Token::If => self.parse_if()?,
+                Token::ElseIf | Token::Else => {
+                    if self.nesting.ends_with(&[Nesting::If])
+                        | self.nesting.ends_with(&[Nesting::ElseIf])
+                    {
+                        self.nesting.pop();
+                        self.next();
+                        break;
+                    } else {
+                        return self.error(
+                            "You need an IF statement to be able to have ELSE (E/L) statements.",
+                            true,
+                        );
+                    }
+                }
+                Token::IfEnd => {
+                    if self.nesting.ends_with(&[Nesting::If])
+                        | self.nesting.ends_with(&[Nesting::ElseIf])
+                        | self.nesting.ends_with(&[Nesting::Else])
+                    {
+                        self.nesting.pop();
+                        self.next();
+                        break;
+                    } else {
+                        return self.error(
+                            "You need an IF statement to be able to have an IF END (F) statements.",
+                            true,
+                        );
+                    }
+                
+                }
             };
 
             statements.push(statement);
@@ -463,6 +517,16 @@ impl Parser {
             }
             _ if kinds.contains(&ExpressionKind::None) => Ok(Expression::None),
             _ => result_missing,
+        }
+    }
+
+    #[instrument(skip_all)]
+    fn parse_negation(&mut self) -> bool {
+        if self.read() == Some(Token::Negation) {
+            self.next();
+            true
+        } else {
+            false
         }
     }
 
@@ -656,7 +720,7 @@ impl Parser {
         }
     }
 
-    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_brackets")]
+    #[instrument(skip_all)]
     fn parse_brackets(&mut self) -> Result<Statement, SyntaxError> {
         self.next();
         self.nesting.push(Nesting::Brackets);
@@ -670,6 +734,8 @@ impl Parser {
             );
         }
 
+        let is_negated = self.parse_negation();
+
         let expr = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Size,
@@ -677,7 +743,11 @@ impl Parser {
             ExpressionKind::Function,
         ])?;
 
-        Ok(Statement::While(code, expr))
+        Ok(Statement::While {
+            code,
+            expr,
+            is_negated,
+        })
     }
 
     #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_parentheses")]
@@ -707,7 +777,7 @@ impl Parser {
         Ok(Statement::Repeat(code, expr))
     }
 
-    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_function_def")]
+    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_if")]
     fn parse_function_def(&mut self, name: String) -> Result<Statement, SyntaxError> {
         if self.functions.contains(&name) {
             return self.error(
@@ -785,5 +855,56 @@ impl Parser {
         ])?;
 
         Ok(Statement::Return { value })
+    }
+
+    #[instrument(skip_all)]
+    fn parse_if(&mut self) -> Result<Statement, SyntaxError> {
+        let mut branches = vec![];
+
+        self.next();
+
+        loop {
+            match self.read_last() {
+                Some(token @ Token::If | token @ Token::ElseIf) => {
+                    if token == Token::If {
+                        self.nesting.push(Nesting::If);
+                    } else {
+                        self.nesting.push(Nesting::ElseIf);
+                    }
+
+                    let is_negated = self.parse_negation();
+                    let expression = self.parse_expression([
+                        ExpressionKind::None,
+                        ExpressionKind::Size,
+                        ExpressionKind::Code,
+                        ExpressionKind::Function,
+                    ])?;
+                    let code = self.parse()?;
+
+                    branches.push(IfBranch::If {
+                        expr: expression,
+                        is_negated,
+                        code,
+                    });
+                }
+                Some(Token::Else) => {
+                    self.nesting.push(Nesting::Else);
+
+                    let code = self.parse()?;
+
+                    branches.push(IfBranch::Else { code });
+                    break;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        if self.read_last() != Some(Token::IfEnd) {
+            return self.error("IF (I) statement did not have an IF closing (F).", false);
+        }
+
+        Ok(Statement::If(branches))
     }
 }

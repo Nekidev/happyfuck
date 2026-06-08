@@ -54,6 +54,9 @@ pub fn start(runtime: &mut Runtime) {
                     Nesting::Brackets => repr.push('['),
                     Nesting::Parentheses => repr.push('('),
                     Nesting::FunctionBody => repr.push(':'),
+                    Nesting::If => repr.push('I'),
+                    Nesting::Else => repr.push('E'),
+                    Nesting::ElseIf => repr.push('L'),
                 }
             }
 
