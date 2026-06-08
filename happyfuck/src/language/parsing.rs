@@ -39,6 +39,10 @@ pub enum Statement {
         size: Size,
         value: Expression,
     },
+    DebugOutput {
+        size: Size,
+        value: Expression,
+    },
     While(Vec<Statement>, Expression),
     Repeat(Vec<Statement>, Expression),
     FunctionDefinition {
@@ -127,6 +131,26 @@ impl Size {
             Size::QWord => true,
         }
     }
+
+    pub fn overflowing_add(&self, a: u64, b: u64) -> (u64, bool) {
+        let (result, is_overflowed) = a.overflowing_add(b);
+
+        if is_overflowed {
+            return (result, is_overflowed);
+        }
+
+        (self.wrap(result), self.fits(result))
+    }
+
+    pub fn overflowing_sub(&self, a: u64, b: u64) -> (u64, bool) {
+        let (result, is_overflowed) = a.overflowing_sub(b);
+
+        if is_overflowed {
+            return (result, is_overflowed);
+        }
+
+        (self.wrap(result), self.fits(result))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +175,10 @@ impl Parser {
         self.tokens.get(self.cursor).cloned()
     }
 
+    fn read_last(&self) -> Option<Token> {
+        self.tokens.get(self.cursor.wrapping_sub(1)).cloned()
+    }
+
     fn next(&mut self) {
         tracing::trace!(new_cursor = self.cursor + 1, "Moved parser cursor.");
         self.cursor += 1;
@@ -160,6 +188,42 @@ impl Parser {
         Err(SyntaxError::new(message, 0..1, is_fatal))
     }
 
+    #[instrument(skip_all)]
+    pub fn undo(&mut self) {
+        tracing::trace!("Undoing...");
+
+        self.cursor += 1;
+        // self.cursor = self.cursor.wrapping_sub(1);
+
+        while let Some(token) = self.read() {
+            tracing::trace!(?token, "Undoing token...");
+
+            match token {
+                Token::BraceLeft | Token::BracketLeft | Token::ParenthesisLeft => {
+                    self.nesting.pop();
+                }
+                Token::FunctionBodyStart => {
+                    self.nesting.pop();
+
+                    // Add another token pop, once for the function name.
+                    self.tokens.pop();
+                }
+                Token::BraceRight => self.nesting.push(Nesting::Braces),
+                Token::BracketRight => self.nesting.push(Nesting::Brackets),
+                Token::ParenthesisRight => self.nesting.push(Nesting::Parentheses),
+                Token::FunctionBodyFinish => self.nesting.push(Nesting::FunctionBody),
+                _ => {}
+            }
+
+            self.tokens.pop();
+            self.cursor = self.cursor.wrapping_sub(1);
+
+            if self.nesting.is_empty() {
+                break;
+            }
+        }
+    }
+
     #[instrument(skip_all, target = "hf::language::parsing::Parser::feed")]
     pub fn feed(&mut self, tokens: Vec<Token>) -> Result<Vec<Statement>, SyntaxError> {
         let tokens: Vec<_> = tokens.into_iter().filter(Token::is_meaningful).collect();
@@ -167,11 +231,13 @@ impl Parser {
         self.nesting.clear();
 
         let init_cursor = self.cursor;
+        let init_functions = self.functions.clone();
 
         let result = self.parse();
 
         if let Err(error) = &result {
             self.cursor = init_cursor;
+            self.functions = init_functions;
 
             if error.is_fatal {
                 for _ in 0..tokens.len() {
@@ -198,6 +264,7 @@ impl Parser {
                 Token::Goto => self.parse_goto()?,
                 Token::Input => self.parse_input(None),
                 Token::Output => self.parse_output()?,
+                Token::DebugOutput => self.parse_debug_output()?,
                 Token::Target => self.parse_target()?,
                 Token::Pointer => self.parse_pointer(None),
                 Token::FunctionDefinition(name) => self.parse_function_def(name)?,
@@ -359,6 +426,14 @@ impl Parser {
                 self.next();
 
                 let code = self.parse()?;
+
+                if self.read_last() != Some(Token::BraceRight) {
+                    return self.error(
+                        "Opening expression brace ({) did not have a matching closing one (}).",
+                        false,
+                    );
+                }
+
                 let size = self.parse_size();
 
                 tracing::trace!(?code, ?size, "Parsed code expression.");
@@ -374,6 +449,14 @@ impl Parser {
             }
             Token::FunctionCallExpression(name) => {
                 self.next();
+
+                if !self.functions.contains(&name) {
+                    return self.error(
+                        format!("No function called `{name}` is available in this scope."),
+                        true,
+                    );
+                }
+
                 tracing::trace!(name, "Parsed function call expression.");
 
                 Ok(Expression::Function(name))
@@ -449,6 +532,7 @@ impl Parser {
         let expression = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Code,
+            ExpressionKind::Size,
             ExpressionKind::Fixed,
             ExpressionKind::Function,
         ])?;
@@ -463,6 +547,7 @@ impl Parser {
         let expression = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Code,
+            ExpressionKind::Size,
             ExpressionKind::Fixed,
             ExpressionKind::Function,
         ])?;
@@ -505,6 +590,21 @@ impl Parser {
         ])?;
 
         Ok(Statement::Output { size, value })
+    }
+
+    #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_debug_output")]
+    fn parse_debug_output(&mut self) -> Result<Statement, SyntaxError> {
+        self.next();
+
+        let size = self.parse_size();
+        let value = self.parse_expression([
+            ExpressionKind::None,
+            ExpressionKind::Code,
+            ExpressionKind::Fixed,
+            ExpressionKind::Function,
+        ])?;
+
+        Ok(Statement::DebugOutput { size, value })
     }
 
     #[instrument(skip_all, target = "hf::language::parsing::Parser::parse_pointer")]
@@ -562,6 +662,14 @@ impl Parser {
         self.nesting.push(Nesting::Brackets);
 
         let code = self.parse()?;
+
+        if self.read_last() != Some(Token::BracketRight) {
+            return self.error(
+                "Opening bracket ([) did not have a matching closing one (]).",
+                false,
+            );
+        }
+
         let expr = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Size,
@@ -578,6 +686,14 @@ impl Parser {
         self.nesting.push(Nesting::Parentheses);
 
         let code = self.parse()?;
+
+        if self.read_last() != Some(Token::ParenthesisRight) {
+            return self.error(
+                "Opening parenthesis (() did not have a matching closing one ()).",
+                false,
+            );
+        }
+
         let expr = self.parse_expression([
             ExpressionKind::None,
             ExpressionKind::Size,
@@ -598,16 +714,15 @@ impl Parser {
                 format!(
                     concat!(
                         "Function `{}` already exists. You cannot define a function with the ",
-                        "same name twice."
+                        "same name twice. {:?}"
                     ),
-                    name
+                    name, self.functions
                 ),
                 true,
             );
         }
 
         self.next();
-        self.nesting.push(Nesting::FunctionBody);
 
         if self.read() != Some(Token::FunctionBodyStart) {
             return self.error(
@@ -616,12 +731,18 @@ impl Parser {
             );
         }
 
+        self.nesting.push(Nesting::FunctionBody);
         self.next();
 
         self.functions.insert(name.clone());
         let snapshot = self.functions.clone();
 
         let code = self.parse()?;
+
+        if self.read_last() != Some(Token::FunctionBodyFinish) {
+            return self.error("Function body (:) was not closed (;).", false);
+        }
+
         let size = self.parse_size();
 
         self.functions = snapshot;

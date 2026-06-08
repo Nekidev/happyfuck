@@ -1,6 +1,7 @@
 use std::fs;
 use std::time::Instant;
 
+use rustyline::error::ReadlineError;
 use rustyline::history::FileHistory;
 use rustyline::{Config, EditMode, Editor};
 
@@ -38,7 +39,7 @@ pub fn start(runtime: &mut Runtime) {
 
     loop {
         let input = if runtime.parser.nesting.is_empty() {
-            readline.readline(">>> ").unwrap()
+            readline.readline(">>> ")
         } else {
             let mut repr = String::with_capacity(runtime.parser.nesting.len());
 
@@ -56,52 +57,74 @@ pub fn start(runtime: &mut Runtime) {
                 }
             }
 
-            readline.readline(&format!("{repr:<2}> ")).unwrap()
+            readline.readline_with_initial(
+                &format!("{repr:<2}> "),
+                (&"  ".repeat(runtime.parser.nesting.len()), ""),
+            )
         };
 
-        let mut write_to_history = true;
+        match &input {
+            Ok(input) => {
+                let mut write_to_history = true;
 
-        match input.trim() {
-            "/quit" | "/q" => break,
-            "/help" | "/h" => command_help(),
-            "/code" | "/o" => command_code(runtime),
-            "/cell" | "/c" => command_cell(runtime),
-            "/memory" | "/m" => command_memory(runtime),
-            "/reset" | "/r" => command_reset(runtime),
-            "/timing" | "/t" => command_timing(&mut shell),
-            _ => {
-                let start = Instant::now();
+                match input.trim() {
+                    "/quit" | "/q" => break,
+                    "/help" | "/h" => command_help(),
+                    "/code" | "/o" => command_code(runtime),
+                    "/cell" | "/c" => command_cell(runtime),
+                    "/memory" | "/m" => command_memory(runtime),
+                    "/reset" | "/r" => command_reset(runtime),
+                    "/timing" | "/t" => command_timing(&mut shell),
+                    _ => {
+                        let start = Instant::now();
 
-                let result = runtime.run(&input);
+                        let result = runtime.run(input);
 
-                let elapsed = start.elapsed();
+                        let elapsed = start.elapsed();
 
-                if runtime.last_output.is_some() && runtime.last_output != Some('\n') {
-                    // readline.readline() clears the current line, output is lost if it doesn't
-                    // end in a new line.
-                    println!();
+                        if runtime.last_output.is_some() && runtime.last_output != Some('\n') {
+                            // readline.readline() clears the current line, output is lost if it doesn't
+                            // end in a new line.
+                            println!();
+                        }
+
+                        if let Err(error) = result
+                            && error.is_fatal
+                        {
+                            eprintln!("{error}");
+                            write_to_history = false;
+                        }
+
+                        if shell.timing {
+                            println!("Took {elapsed:?}");
+                        }
+                    }
                 }
 
-                if let Err(error) = result
-                    && error.is_fatal
-                {
-                    println!("{error}");
-                    write_to_history = false;
-                }
+                if write_to_history {
+                    if !fs::exists(HISTORY_PATH).unwrap() {
+                        let _ = fs::write(HISTORY_PATH, "");
+                    }
 
-                if shell.timing {
-                    println!("Took {elapsed:?}");
+                    readline.add_history_entry(input).unwrap();
+                    let _ = readline.save_history(HISTORY_PATH);
                 }
             }
-        }
+            Err(error) => match error {
+                ReadlineError::Interrupted => {
+                    if runtime.parser.nesting.is_empty() {
+                        break;
+                    } else {
+                        runtime.parser.undo();
+                    }
 
-        if write_to_history {
-            if !fs::exists(HISTORY_PATH).unwrap() {
-                let _ = fs::write(HISTORY_PATH, "");
-            }
-
-            readline.add_history_entry(&input).unwrap();
-            let _ = readline.save_history(HISTORY_PATH);
+                    continue;
+                }
+                _ => {
+                    input.unwrap();
+                    continue;
+                }
+            },
         }
     }
 }
@@ -135,15 +158,20 @@ fn command_cell(runtime: &Runtime) {
 }
 
 fn command_memory(runtime: &Runtime) {
-    for (i, cell) in runtime.memory.iter().enumerate() {
-        if (i) % 10 == 0 && i != 0 {
-            println!();
+    println!("Memory allocated: {} bytes", runtime.memory.len());
+    println!("Memory reserved: {} bytes", runtime.memory.capacity());
+
+    if !runtime.memory.is_empty() {
+        for (i, cell) in runtime.memory.iter().enumerate() {
+            if (i) % 10 == 0 && i != 0 {
+                println!();
+            }
+    
+            print!("{cell:0>3} ");
         }
-
-        print!("{cell:0>3} ");
+    
+        println!();
     }
-
-    println!();
 }
 
 fn command_reset(runtime: &mut Runtime) {

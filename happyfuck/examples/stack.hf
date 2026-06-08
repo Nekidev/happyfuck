@@ -1,0 +1,166 @@
+# Initializes the stack.
+#
+# It makes the first 4 addresses a pointer to the next free stack address.
+&init:
+    @0+d4
+    >4
+;
+
+# Allocates the current byte's amount of bytes.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_c_b:
+    @0+d{}b
+    R{~0-d{}b}d
+;d
+
+# Allocates the current word's amount of bytes.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_c_w:
+    @0+d{}w
+    R{~0-d{}w}d
+;d
+
+# Allocates the current dword's amount of bytes.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_c_d:
+    @0+{}d
+    R{~0-{}d}d
+;d
+
+# Allocates the current qword's amount of bytes.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_c_q:
+    @0+d{}q
+    R{~0-d{}q}d
+;d
+
+# Allocates a byte.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_b:
+    @0+d
+    R{~0-d}d
+;d
+
+# Allocates a word.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_w:
+    @0+d2
+    R{~0-d2}d
+;d
+
+# Allocates a double word.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_d:
+    @0+d4
+    R{~0-d4}d
+;d
+
+# Allocates a quad word.
+#
+# Returns:
+# The pointer to the first cell of the newly-allocated space.
+&push_q:
+    @0+d8
+    R{~0-d8}d
+;d
+
+# Pops the current byte amount of bytes from the stack.
+&pop_c_b:
+    @0-d{}b
+    R0
+;
+
+# Pops the current word amount of bytes from the stack.
+&pop_c_w:
+    @0-d{}w
+    R0
+;
+
+# Pops the current double word amount of bytes from the stack.
+&pop_c_d:
+    @0-{}d
+    R0
+;
+
+# Pops the current quad word amount of bytes from the stack.
+&pop_c_q:
+    @0-d{}q
+    R0
+;
+
+# Pops a byte from the stack.
+#
+# Returns:
+# The address to the popped byte.
+&pop_b:
+    @0-d
+    R{~0}d
+;
+
+# Pops a word from the stack.
+#
+# Returns:
+# The address to the popped word.
+&pop_w:
+    @0-d2
+    R{~0}d
+;
+
+# Pops a double word from the stack.
+#
+# Returns:
+# The address to the popped double word.
+&pop_d:
+    @0-d4
+    R{~0}d
+;
+
+# Pops a quad word from the stack.
+#
+# Returns:
+# The address to the popped quad word.
+&pop_q:
+    @0-d8
+    R{~0}d
+;
+
+&main:
+    %init
+
+    &print:
+        @?push_d$d
+        (>.)
+        ~{~?pop_d}d
+        R0
+    ;
+
+    ~?push_b
+    
+    =b"hey!\n"
+    
+    %push_c_b
+    <
+
+    (%print)5
+
+    %pop_c_b
+    %pop_b
+
+    ."Pointer ended at " *{$} ."\n"
+;
+
+%main

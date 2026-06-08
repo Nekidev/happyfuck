@@ -89,6 +89,9 @@ pub enum Token {
 
     /// R
     Return,
+
+    /// *
+    DebugOutput,
 }
 
 impl Token {
@@ -144,6 +147,7 @@ impl Tokenizer {
                 '?' => self.tokenize_function_call_expression()?,
                 'C' => self.tokenize_flag_carry(),
                 'R' => self.tokenize_return(),
+                '*' => self.tokenize_debug_output(),
                 '\'' | '"' => self.tokenize_string()?,
                 '0'..='9' => self.tokenize_number(),
                 'b' | 'w' | 'd' | 'q' => self.tokenize_size(),
@@ -589,5 +593,14 @@ impl Tokenizer {
     fn tokenize_return(&mut self) -> Token {
         self.next();
         Token::Return
+    }
+
+    #[instrument(
+        skip_all,
+        target = "hf::language::tokenizing::Tokenizer::tokenize_debug_output"
+    )]
+    fn tokenize_debug_output(&mut self) -> Token {
+        self.next();
+        Token::DebugOutput
     }
 }
