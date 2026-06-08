@@ -212,14 +212,11 @@ impl Parser {
     pub fn undo(&mut self) {
         tracing::trace!("Undoing...");
 
-        self.cursor += 1;
-        // self.cursor = self.cursor.wrapping_sub(1);
-
-        while let Some(token) = self.read() {
+        while let Some(token) = self.tokens.last() {
             tracing::trace!(?token, "Undoing token...");
 
             match token {
-                Token::BraceLeft | Token::BracketLeft | Token::ParenthesisLeft => {
+                Token::BraceLeft | Token::BracketLeft | Token::ParenthesisLeft | Token::If => {
                     self.nesting.pop();
                 }
                 Token::FunctionBodyStart => {
@@ -232,16 +229,18 @@ impl Parser {
                 Token::BracketRight => self.nesting.push(Nesting::Brackets),
                 Token::ParenthesisRight => self.nesting.push(Nesting::Parentheses),
                 Token::FunctionBodyFinish => self.nesting.push(Nesting::FunctionBody),
+                Token::IfEnd => self.nesting.push(Nesting::If),
                 _ => {}
             }
 
             self.tokens.pop();
-            self.cursor = self.cursor.wrapping_sub(1);
 
             if self.nesting.is_empty() {
                 break;
             }
         }
+
+        self.cursor = self.tokens.len();
     }
 
     #[instrument(skip_all, target = "hf::language::parsing::Parser::feed")]
@@ -386,7 +385,6 @@ impl Parser {
                         | self.nesting.ends_with(&[Nesting::ElseIf])
                     {
                         self.nesting.pop();
-                        self.next();
                         break;
                     } else {
                         return self.error(
@@ -409,7 +407,6 @@ impl Parser {
                             true,
                         );
                     }
-                
                 }
             };
 
@@ -861,11 +858,13 @@ impl Parser {
     fn parse_if(&mut self) -> Result<Statement, SyntaxError> {
         let mut branches = vec![];
 
-        self.next();
-
         loop {
-            match self.read_last() {
+            tracing::trace!(token = ?self.read(), "Parsing IF branch...");
+
+            match self.read() {
                 Some(token @ Token::If | token @ Token::ElseIf) => {
+                    self.next();
+
                     if token == Token::If {
                         self.nesting.push(Nesting::If);
                     } else {
@@ -890,6 +889,7 @@ impl Parser {
                 Some(Token::Else) => {
                     self.nesting.push(Nesting::Else);
 
+                    self.next();
                     let code = self.parse()?;
 
                     branches.push(IfBranch::Else { code });
