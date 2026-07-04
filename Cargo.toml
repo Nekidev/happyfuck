@@ -8,3 +8,6 @@ opt-level = 3
 codegen-units = 1
 lto = true
 strip = true
+debug = false
+overflow-checks = false
+incremental = false

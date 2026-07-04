@@ -132,60 +132,70 @@ impl Tokenizer {
 
     #[instrument(skip_all)]
     pub fn tokenize(&mut self, code: &str) -> Result<Vec<Token>, SyntaxError> {
+        tracing::trace!(%code, existing = %self.code.iter().collect::<String>(), "Starting tokenization of code...");
+        
         let mut tokens = vec![];
 
         self.code.append(&mut code.chars().collect());
 
         while let Some(ch) = self.read() {
             let token = match ch {
-                '+' => self.tokenize_plus(),
-                '-' => self.tokenize_minus(),
-                '<' => self.tokenize_left(),
-                '>' => self.tokenize_right(),
-                '=' => self.tokenize_set(),
-                '~' => self.tokenize_goto(),
-                ',' => self.tokenize_input(),
-                '.' => self.tokenize_output(),
-                '@' => self.tokenize_target(),
-                '$' => self.tokenize_pointer(),
-                '{' => self.tokenize_brace_left(),
-                '}' => self.tokenize_brace_right(),
-                '[' => self.tokenize_bracket_left(),
-                ']' => self.tokenize_bracket_right(),
-                '(' => self.tokenize_parenthesis_left(),
-                ')' => self.tokenize_parenthesis_right(),
-                '#' => self.tokenize_comment(),
-                '&' => self.tokenize_function_def()?,
-                ':' => self.tokenize_function_body_start(),
-                ';' => self.tokenize_function_body_finish(),
-                '%' => self.tokenize_function_call_statement()?,
-                '?' => self.tokenize_function_call_expression()?,
-                'C' => self.tokenize_flag_carry(),
-                'R' => self.tokenize_return(),
-                '*' => self.tokenize_debug_output(),
-                '!' => self.tokenize_negation(),
-                'I' => self.tokenize_if(),
-                'L' => self.tokenize_else_if(),
-                'E' => self.tokenize_else(),
-                'F' => self.tokenize_if_end(),
-                '\'' | '"' => self.tokenize_string()?,
-                '0'..='9' => self.tokenize_number(),
-                'b' | 'w' | 'd' | 'q' => self.tokenize_size(),
-                '\n' | ' ' | '\t' | '\r' => self.tokenize_nothing(),
+                '+' => Ok(self.tokenize_plus()),
+                '-' => Ok(self.tokenize_minus()),
+                '<' => Ok(self.tokenize_left()),
+                '>' => Ok(self.tokenize_right()),
+                '=' => Ok(self.tokenize_set()),
+                '~' => Ok(self.tokenize_goto()),
+                ',' => Ok(self.tokenize_input()),
+                '.' => Ok(self.tokenize_output()),
+                '@' => Ok(self.tokenize_target()),
+                '$' => Ok(self.tokenize_pointer()),
+                '{' => Ok(self.tokenize_brace_left()),
+                '}' => Ok(self.tokenize_brace_right()),
+                '[' => Ok(self.tokenize_bracket_left()),
+                ']' => Ok(self.tokenize_bracket_right()),
+                '(' => Ok(self.tokenize_parenthesis_left()),
+                ')' => Ok(self.tokenize_parenthesis_right()),
+                '#' => Ok(self.tokenize_comment()),
+                '&' => self.tokenize_function_def(),
+                ':' => Ok(self.tokenize_function_body_start()),
+                ';' => Ok(self.tokenize_function_body_finish()),
+                '%' => self.tokenize_function_call_statement(),
+                '?' => self.tokenize_function_call_expression(),
+                'C' => Ok(self.tokenize_flag_carry()),
+                'R' => Ok(self.tokenize_return()),
+                '*' => Ok(self.tokenize_debug_output()),
+                '!' => Ok(self.tokenize_negation()),
+                'I' => Ok(self.tokenize_if()),
+                'L' => Ok(self.tokenize_else_if()),
+                'E' => Ok(self.tokenize_else()),
+                'F' => Ok(self.tokenize_if_end()),
+                '\'' | '"' => self.tokenize_string(),
+                '0'..='9' => Ok(self.tokenize_number()),
+                'b' | 'w' | 'd' | 'q' => Ok(self.tokenize_size()),
+                '\n' | ' ' | '\t' | '\r' => Ok(self.tokenize_nothing()),
                 _ => {
-                    for _ in 0..code.len() {
-                        self.code.pop();
-                    }
-
-                    return Err(SyntaxError::new(
+                    Err(SyntaxError::new(
                         format!("An unexpected token was found: {ch}"),
                         self.cursor..(self.cursor + 1),
                         true,
-                    ));
+                    ))
                 }
             };
 
-            tokens.push(token);
+            match token {
+                Ok(token) => {
+                    tokens.push(token);
+                },
+                Err(error) => {
+                    for _ in 0..code.len() {
+                        self.code.pop();
+                        self.cursor = self.cursor.saturating_sub(1);
+                    }
+
+                    return Err(error);
+                }
+            }
         }
 
         Ok(tokens)
