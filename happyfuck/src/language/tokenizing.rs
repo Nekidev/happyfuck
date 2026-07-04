@@ -135,6 +135,7 @@ impl Tokenizer {
         tracing::trace!(%code, existing = %self.code.iter().collect::<String>(), "Starting tokenization of code...");
         
         let mut tokens = vec![];
+        let init_cursor = self.cursor;
 
         self.code.append(&mut code.chars().collect());
 
@@ -190,8 +191,9 @@ impl Tokenizer {
                 Err(error) => {
                     for _ in 0..code.len() {
                         self.code.pop();
-                        self.cursor = self.cursor.saturating_sub(1);
                     }
+
+                    self.cursor = init_cursor;
 
                     return Err(error);
                 }
@@ -401,12 +403,17 @@ impl Tokenizer {
         while let Some(ch) = self.read() {
             tracing::trace!(?ch, "Processing char for number...");
 
-            if !ch.is_ascii_digit() {
+            if ch.is_ascii_digit() {
+                contents.push(ch);
+                self.next();
+
+            // Numbers can have underscores in them, but they can't start with one.
+            } else if !contents.is_empty() && ch == '_' {
+                self.next();
+            } else {
                 break;
             }
 
-            contents.push(ch);
-            self.next();
         }
 
         tracing::trace!(?contents, "Tokenized number");
